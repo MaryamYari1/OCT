@@ -1,0 +1,72 @@
+# Retinal OCT Anomaly Detection with Transfer Learning
+
+A binary image classification system that detects abnormal findings (CNV, DME, DRUSEN) versus normal retinal tissue in Optical Coherence Tomography (OCT) scans, using transfer learning on a pretrained ResNet18 model.
+
+## Overview
+
+Optical Coherence Tomography is a core imaging modality in ophthalmology, used to detect retinal diseases such as choroidal neovascularization (CNV), diabetic macular edema (DME), and drusen deposits. Manual review of OCT scans is time-consuming and requires specialist expertise. This project explores whether a lightweight, transfer-learning-based deep learning model can flag abnormal scans for further review, as a proof-of-concept toward AI-assisted screening in ophthalmology.
+
+## Dataset
+
+- **Source:** [Kermany et al. OCT dataset](https://data.mendeley.com/datasets/rscbjbr9sj/3) (also available via Kaggle), a large public collection of labeled retinal OCT images across four categories: CNV, DME, DRUSEN, and NORMAL.
+- **Task framing:** The three abnormal categories (CNV, DME, DRUSEN) were merged into a single `abnormal` class and contrasted against `normal`, framing the problem as binary anomaly detection.
+- **Split used:**
+  - Train: 400 images per class (1200 abnormal, 400 normal)
+  - Validation: 80 images per class (240 abnormal, 80 normal), drawn from the dataset's held-out test split to avoid leakage
+
+## Method
+
+- **Architecture:** ResNet18, pretrained on ImageNet, with the convolutional backbone frozen and a new single-output linear layer trained on top (transfer learning).
+- **Framework:** PyTorch (`torchvision` for data loading and the pretrained model).
+- **Preprocessing:** Images resized to 224x224 and converted to tensors via `torchvision.transforms`.
+- **Loss / optimizer:** `BCEWithLogitsLoss`, `Adam` optimizer on the final layer's parameters only.
+- **Training:** 3 epochs, batch size 16, with per-epoch loss and accuracy averaged over all batches (not just the last batch) for an honest training signal.
+
+## Results
+
+Evaluated on the held-out validation set (320 images):
+
+| Metric | Value |
+|---|---|
+| Overall accuracy | 90.94% |
+| Precision (abnormal) | 91.37% |
+| Recall (abnormal) | 97.08% |
+| F1-score (abnormal) | 94.14% |
+
+**Confusion matrix** (rows = true label, columns = predicted label):
+
+|  | Predicted: abnormal | Predicted: normal |
+|---|---|---|
+| **True: abnormal** | 233 | 7 |
+| **True: normal** | 22 | 58 |
+
+Recall was prioritized as a key metric given the clinical context: missing a true abnormal case (false negative) is more costly than a false alarm. The model missed only 7 of 240 abnormal cases in validation.
+
+The trained model was also tested manually on unseen single images (outside the train/val split) and correctly classified them.
+
+## Usage
+
+```bash
+pip install torch torchvision scikit-learn pillow
+```
+
+1. Download the Kermany OCT dataset and update the source path in `prepare_data.py`.
+2. Run `prepare_data.py` once to build the `data/train` and `data/val` folders.
+3. Run `OCT1.py` to train the model and save weights to `oct_model.pth`.
+4. Run `test_single_image.py` (with an image path set) to classify a single new image.
+
+## Project structure
+
+```
+prepare_data.py       # Samples and organizes images from the raw dataset into train/val folders
+OCT1.py                # Builds the model, trains it, evaluates on validation set, saves weights
+test_single_image.py   # Loads the saved model and classifies a single new OCT image
+oct_model.pth           # Saved trained model weights
+```
+
+## Limitations & next steps
+
+- The training set (1600 images) is a small subset of the full Kermany dataset (which contains over 100,000 images); results may not generalize as well as a model trained on the full dataset.
+- The binary framing (normal vs. abnormal) collapses three distinct pathologies into one class; a multi-class model (CNV vs. DME vs. DRUSEN vs. NORMAL) would be more clinically informative.
+- Only the final layer was fine-tuned; unfreezing deeper layers of ResNet18 with a larger dataset (e.g. on GPU via Google Colab) could improve performance further.
+- No formal test-set holdout beyond validation; a three-way train/val/test split would give a less biased final performance estimate.
